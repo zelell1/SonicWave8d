@@ -1,0 +1,369 @@
+@page "/"
+@using SonicWave8D.Services
+@using SonicWave8D.Models
+@using SonicWave8D.Components
+@inject AuthService AuthService
+@inject StorageService StorageService
+@inject AudioService AudioService
+@implements IDisposable
+
+@if (AuthService.IsLoading)
+{
+    <div class="min-h-screen flex items-center justify-center">
+        <div class="text-slate-500">Loading...</div>
+    </div>
+}
+else if (!AuthService.IsAuthenticated)
+{
+    <AuthScreen />
+}
+else
+{
+    <div class="min-h-screen flex flex-col">
+        <Header />
+
+        <main class="flex-grow p-4 md:p-8">
+            <div class="max-w-3xl mx-auto space-y-12">
+
+                <div class="space-y-6">
+                    <div class="text-center space-y-2">
+                        <h2 class="text-3xl md:text-4xl font-bold text-white">
+                            Experience Music in <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">8 Dimensions</span>
+                        </h2>
+                        <p class="text-slate-400 max-w-lg mx-auto">
+                            Upload your MP3 or WAV files. Apply custom Equalizer settings and toggle 8D effects.
+                        </p>
+                    </div>
+
+                    <FileUpload OnFileSelected="HandleFileSelect" />
+                </div>
+
+                @if (loadingData)
+                {
+                    <div class="text-center text-slate-500 py-10">Loading your tracks...</div>
+                }
+                else if (tracks.Count > 0)
+                {
+                    <div class="space-y-4 animate-fade-in-up">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h3 class="text-lg font-semibold text-slate-200">Your Library</h3>
+                            <span class="text-xs text-slate-500">@tracks.Count tracks</span>
+                        </div>
+
+                        <div class="grid gap-3">
+                            @foreach (var track in tracks)
+                            {
+                                <TrackItem
+                                    @key="track.Id"
+                                    Track="@track"
+                                    OnProcess="@(async (id) => await HandleProcess(id))"
+                                    OnDelete="@(async (id) => await HandleDelete(id))"
+                                    OnPresetChange="@(async (args) => await HandlePresetChange(args))"
+                                    OnGainChange="@(async (args) => await HandleGainChange(args))"
+                                    OnToggle8D="@(async (args) => await HandleToggle8D(args))" />
+                            }
+                        </div>
+                    </div>
+                }
+
+            </div>
+        </main>
+
+        <footer class="border-t border-slate-800 py-6 mt-12 bg-slate-900/50">
+            <div class="max-w-5xl mx-auto px-4 text-center text-slate-500 text-sm">
+                <p>&copy; @DateTime.Now.Year SonicWave 8D. Secure Local Database.</p>
+            </div>
+        </footer>
+    </div>
+}
+
+@code {
+    private List<AudioTrack> tracks = new();
+    private bool loadingData = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthService.OnAuthStateChanged += OnAuthStateChanged;
+        await LoadTracks();
+    }
+
+    private async void OnAuthStateChanged()
+    {
+        Console.WriteLine($"[AUTH] OnAuthStateChanged called. Current user: {AuthService.CurrentUser?.Email ?? "NULL"}");
+
+        // Сначала обновляем UI, потом загружаем треки
+        await InvokeAsync(StateHasChanged);
+
+        // Загружаем треки в фоне чтобы не блокировать UI
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await LoadTracks();
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AUTH] Error loading tracks in background: {ex.Message}");
+            }
+        });
+    }
+
+    private async Task LoadTracks()
+    {
+        Console.WriteLine($"[LOAD] LoadTracks called. User: {AuthService.CurrentUser?.Email ?? "NULL"}");
+
+        if (AuthService.CurrentUser == null)
+        {
+            Console.WriteLine("[LOAD] No user logged in, skipping track load");
+            tracks.Clear();
+            return;
+        }
+
+        loadingData = true;
+
+        try
+        {
+            Console.WriteLine($"[LOAD] Fetching tracks for user ID: {AuthService.CurrentUser.Id}");
+
+            // Добавляем таймаут на 15 секунд для больших файлов
+            var loadTask = StorageService.GetUserTracksAsync(AuthService.CurrentUser.Id);
+            var timeoutTask = Task.Delay(15000);
+
+            var completedTask = await Task.WhenAny(loadTask, timeoutTask);
+
+            if (completedTask == timeoutTask)
+            {
+                Console.WriteLine("[ERROR] ⏱️ Loading tracks timeout after 15 seconds!");
+                Console.WriteLine("[ERROR] Try clearing IndexedDB: DevTools → Application → Storage → IndexedDB → Delete 'SonicWaveDB'");
+                tracks.Clear();
+                return;
+            }
+
+            var loadedTracks = await loadTask;
+
+            if (loadedTracks != null)
+            {
+                tracks = loadedTracks.OrderByDescending(t => t.UploadDate).ToList();
+                Console.WriteLine($"[LOAD] ✅ Loaded {tracks.Count} tracks successfully");
+            }
+            else
+            {
+                Console.WriteLine("[LOAD] No tracks returned");
+                tracks.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] ❌ Error loading tracks: {ex.Message}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"[ERROR] Inner exception: {ex.InnerException.Message}");
+            }
+            tracks.Clear();
+        }
+        finally
+        {
+            loadingData = false;
+        }
+    }
+
+    private async Task HandleFileSelect((string dataUrl, string fileName, string fileType, long fileSize) fileData)
+    {
+        Console.WriteLine($"[FILE] HandleFileSelect called. Current user: {AuthService.CurrentUser?.Email ?? "NULL"}");
+        Console.WriteLine($"[FILE] Current user ID: {AuthService.CurrentUser?.Id ?? "NULL"}");
+
+        if (AuthService.CurrentUser == null)
+        {
+            Console.WriteLine("[FILE] No user logged in, cannot save track!");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(AuthService.CurrentUser.Id))
+        {
+            Console.WriteLine($"[FILE] User ID is empty! User email: {AuthService.CurrentUser.Email}");
+            return;
+        }
+
+        var defaultPreset = AudioConstants.EQ_PRESETS.First(p => p.Id == "flat");
+
+        var newTrack = new AudioTrack
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = AuthService.CurrentUser.Id,
+            OriginalName = fileData.fileName,
+            FileDataUrl = fileData.dataUrl,
+            UploadDate = DateTime.Now,
+            Status = TrackStatus.Pending,
+            Duration = 0,
+            SelectedPresetId = "flat",
+            CurrentGains = new List<double>(defaultPreset.Gains),
+            Is8dEnabled = true,
+            FileType = fileData.fileType,
+            FileSize = fileData.fileSize
+        };
+
+        Console.WriteLine($"[FILE] Created track with ID: {newTrack.Id}, UserId: {newTrack.UserId}");
+
+        // Добавляем в UI сразу для отзывчивости
+        tracks.Insert(0, newTrack);
+        await InvokeAsync(StateHasChanged);
+
+        // Сохраняем в фоне (не блокируя UI)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await SaveTrackToDB(newTrack);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Background save failed: {ex.Message}");
+            }
+        });
+    }
+
+    private async Task HandlePresetChange((string trackId, string presetId) args)
+    {
+        var preset = AudioConstants.EQ_PRESETS.FirstOrDefault(p => p.Id == args.presetId);
+        if (preset == null) return;
+
+        var track = tracks.FirstOrDefault(t => t.Id == args.trackId);
+        if (track == null) return;
+
+        track.SelectedPresetId = args.presetId;
+        track.CurrentGains = new List<double>(preset.Gains);
+
+        StateHasChanged();
+        await SaveTrackToDB(track);
+    }
+
+    private System.Threading.Timer? gainChangeTimer;
+    private (string trackId, int index, double value)? pendingGainChange;
+
+    private async Task HandleGainChange((string trackId, int index, double value) args)
+    {
+        var track = tracks.FirstOrDefault(t => t.Id == args.trackId);
+        if (track == null) return;
+
+        // Update UI immediately for responsiveness
+        track.CurrentGains[args.index] = args.value;
+        track.SelectedPresetId = "custom";
+        StateHasChanged();
+
+        // Debounce save to DB
+        pendingGainChange = args;
+        gainChangeTimer?.Dispose();
+        gainChangeTimer = new System.Threading.Timer(async _ =>
+        {
+            if (pendingGainChange.HasValue)
+            {
+                var t = tracks.FirstOrDefault(x => x.Id == pendingGainChange.Value.trackId);
+                if (t != null)
+                {
+                    await SaveTrackToDB(t);
+                }
+                pendingGainChange = null;
+            }
+        }, null, 500, Timeout.Infinite); // Save after 500ms of no changes
+    }
+
+    private async Task HandleToggle8D((string trackId, bool enabled) args)
+    {
+        var track = tracks.FirstOrDefault(t => t.Id == args.trackId);
+        if (track == null) return;
+
+        track.Is8dEnabled = args.enabled;
+
+        await SaveTrackToDB(track);
+        StateHasChanged();
+    }
+
+    private async Task HandleProcess(string trackId)
+    {
+        var track = tracks.FirstOrDefault(t => t.Id == trackId);
+        if (track == null) return;
+
+        track.Status = TrackStatus.Processing;
+        StateHasChanged();
+
+        try
+        {
+            Console.WriteLine($"[PROCESS] Starting audio processing for track: {track.OriginalName}");
+            Console.WriteLine($"[PROCESS] ⚠️ Processing may take 5-30 seconds depending on file size. Browser may appear frozen - this is normal!");
+
+            // Даём UI время обновиться
+            await Task.Delay(500);
+            await InvokeAsync(StateHasChanged);
+
+            // Обработка в фоне (JavaScript всё равно блокирует, но хотя бы UI обновится)
+            var result = await AudioService.Process8DAudioAsync(
+                track.FileDataUrl,
+                track.CurrentGains,
+                track.Is8dEnabled
+            );
+
+            if (result.Success)
+            {
+                track.Status = TrackStatus.Completed;
+                track.ProcessedDataUrl = result.ProcessedDataUrl;
+                track.Duration = result.Duration;
+                Console.WriteLine($"[PROCESS] Audio processing completed successfully");
+            }
+            else
+            {
+                track.Status = TrackStatus.Error;
+                Console.WriteLine($"[PROCESS] Processing error: {result.ErrorMessage}");
+            }
+
+            // Сохраняем асинхронно
+            _ = Task.Run(async () => await SaveTrackToDB(track));
+        }
+        catch (Exception ex)
+        {
+            track.Status = TrackStatus.Error;
+            Console.WriteLine($"[PROCESS] Processing exception: {ex.Message}");
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleDelete(string trackId)
+    {
+        var track = tracks.FirstOrDefault(t => t.Id == trackId);
+        if (track == null) return;
+
+        tracks.Remove(track);
+        await StorageService.DeleteTrackAsync(trackId);
+        StateHasChanged();
+    }
+
+    private async Task SaveTrackToDB(AudioTrack track)
+    {
+        try
+        {
+            Console.WriteLine($"[SAVE] Saving track: {track.OriginalName} for user {track.UserId}");
+            await StorageService.SaveTrackAsync(track);
+            Console.WriteLine($"[SAVE] Track saved successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Error saving track: {ex.Message}");
+
+            // Показываем ошибку пользователю
+            await InvokeAsync(() =>
+            {
+                // Можно добавить уведомление об ошибке в UI
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose()
+    {
+        AuthService.OnAuthStateChanged -= OnAuthStateChanged;
+        gainChangeTimer?.Dispose();
+    }
+}

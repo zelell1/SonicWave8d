@@ -1,0 +1,12 @@
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/bin/Debug/net9.0/SonicWave8D.Shared.deps.json
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/bin/Debug/net9.0/SonicWave8D.Shared.dll
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/bin/Debug/net9.0/SonicWave8D.Shared.pdb
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.GeneratedMSBuildEditorConfig.editorconfig
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.AssemblyInfoInputs.cache
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.AssemblyInfo.cs
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.csproj.CoreCompileInputs.cache
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.sourcelink.json
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.dll
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/refint/SonicWave8D.Shared.dll
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/SonicWave8D.Shared.pdb
+/Users/daniillazimov/Physics_Projecttt/SonicWave8D copy/SonicWave8D.Shared/obj/Debug/net9.0/ref/SonicWave8D.Shared.dll

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: sonicwave8d-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sonicwave8d}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./SonicWave8D.API/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sonicwave8d}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sonicwave-network
+
+  # pgAdmin - Web UI для PostgreSQL (опционально)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sonicwave8d-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@sonicwave8d.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sonicwave-network
+    profiles:
+      - tools
+
+  # SonicWave 8D API (для production)
+  api:
+    build:
+      context: .
+      dockerfile: SonicWave8D.API/Dockerfile
+    container_name: sonicwave8d-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:5002
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-sonicwave8d};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      Jwt__Key: ${JWT_KEY:-SonicWave8D_SuperSecretKey_ChangeInProduction_MinLength32Chars!}
+      Jwt__Issuer: ${JWT_ISSUER:-SonicWave8D.API}
+      Jwt__Audience: ${JWT_AUDIENCE:-SonicWave8D.Client}
+      FileStorage__BasePath: /app/uploads
+    ports:
+      - "${API_PORT:-5002}:5002"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sonicwave-network
+    profiles:
+      - full
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  uploads_data:
+    driver: local
+
+networks:
+  sonicwave-network:
+    driver: bridge

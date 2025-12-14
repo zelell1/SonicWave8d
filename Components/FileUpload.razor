@@ -1,0 +1,148 @@
+@using Microsoft.AspNetCore.Components.Forms
+@inject IJSRuntime JSRuntime
+
+<div class="@GetDropZoneClasses()">
+    <label for="fileInput" class="cursor-pointer block">
+        <InputFile id="fileInput"
+                   OnChange="HandleFileSelected"
+                   accept="audio/*"
+                   class="hidden" />
+
+        <div class="p-10 flex flex-col items-center justify-center text-center gap-4">
+            <div class="@GetIconClasses()">
+                @if (isProcessing)
+                {
+                    <!-- Loading Spinner -->
+                    <svg class="w-8 h-8 animate-spin text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                }
+                else
+                {
+                    <!-- Upload Cloud Icon -->
+                    <svg class="w-8 h-8" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                        <path d="M12 12v9"/>
+                        <path d="m16 16-4-4-4 4"/>
+                    </svg>
+                }
+            </div>
+
+            <div class="space-y-1">
+                <h3 class="text-lg font-semibold text-slate-200">
+                    Upload Audio Track
+                </h3>
+                <p class="text-sm text-slate-400 max-w-xs mx-auto">
+                    Click to browse and select MP3, WAV, OGG or FLAC files.
+                </p>
+                <p class="text-xs text-slate-500 mt-2">
+                    Maximum file size: 100 MB
+                </p>
+            </div>
+
+            @if (isProcessing)
+            {
+                <div class="text-xs text-indigo-400">
+                    <p class="mt-2 animate-pulse">Reading file... Please wait</p>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="text-xs text-red-400 bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
+                    @errorMessage
+                </div>
+            }
+        </div>
+    </label>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<(string dataUrl, string fileName, string fileType, long fileSize)> OnFileSelected { get; set; }
+
+    private bool isProcessing = false;
+    private string errorMessage = string.Empty;
+
+    private string GetDropZoneClasses()
+    {
+        var baseClasses = "relative group overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-300";
+
+        if (isProcessing)
+        {
+            return $"{baseClasses} border-indigo-500 bg-indigo-500/10";
+        }
+
+        return $"{baseClasses} border-slate-700 bg-slate-800/50 hover:border-indigo-500 hover:bg-slate-800";
+    }
+
+    private string GetIconClasses()
+    {
+        var baseClasses = "p-4 rounded-full transition-all duration-300";
+
+        if (isProcessing)
+        {
+            return $"{baseClasses} bg-indigo-500/20 text-indigo-400";
+        }
+
+        return $"{baseClasses} bg-slate-700 text-slate-400 group-hover:bg-indigo-500 group-hover:text-white";
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        errorMessage = string.Empty;
+        isProcessing = true;
+
+        try
+        {
+            var file = e.File;
+
+            // Validate file
+            if (file == null)
+            {
+                errorMessage = "No file selected";
+                return;
+            }
+
+            // Check file type
+            if (!file.ContentType.StartsWith("audio/"))
+            {
+                errorMessage = "Please upload an audio file (MP3, WAV, OGG, FLAC)";
+                return;
+            }
+
+            // Check file size (100MB limit)
+            const long maxFileSize = 100 * 1024 * 1024;
+            if (file.Size > maxFileSize)
+            {
+                errorMessage = $"File too large. Maximum size is 100MB (file is {file.Size / 1024 / 1024}MB)";
+                return;
+            }
+
+            Console.WriteLine($"[FileUpload] Reading file: {file.Name}, Size: {file.Size / 1024 / 1024:F2} MB");
+
+            // Read file as base64 data URL
+            var buffer = new byte[file.Size];
+            await file.OpenReadStream(maxFileSize).ReadAsync(buffer);
+
+            // Convert to base64 data URL
+            var base64 = Convert.ToBase64String(buffer);
+            var dataUrl = $"data:{file.ContentType};base64,{base64}";
+
+            Console.WriteLine($"[FileUpload] File converted to data URL, length: {dataUrl.Length}");
+
+            // Invoke callback
+            await OnFileSelected.InvokeAsync((dataUrl, file.Name, file.ContentType, file.Size));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+            Console.WriteLine($"[FileUpload] Error: {ex.Message}");
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+}
